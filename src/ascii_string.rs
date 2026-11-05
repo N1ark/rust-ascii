@@ -893,20 +893,15 @@ impl IntoAsciiString for CString {
     }
 
     fn into_ascii_string(self) -> Result<AsciiString, FromAsciiError<Self>> {
-        AsciiString::from_ascii(self.into_bytes_with_nul())
-            .map_err(|FromAsciiError { error, owner }| {
-                FromAsciiError {
-                    // SAFETY: We don't discard the NULL byte from the original
-                    //         string, so we ensure that it's null terminated
-                    owner: unsafe { CString::from_vec_unchecked(owner) },
-                    error,
-                }
-            })
-            .map(|mut s| {
-                let nul = s.pop();
-                debug_assert_eq!(nul, Some(AsciiChar::Null));
-                s
-            })
+        AsciiString::from_ascii(self.into_bytes()).map_err(|FromAsciiError { error, owner }| {
+            FromAsciiError {
+                // SAFETY: `owner` is the original string without its trailing
+                //         nul byte, so it contains no nul bytes, and
+                //         `from_vec_unchecked` appends the nul byte again
+                owner: unsafe { CString::from_vec_unchecked(owner) },
+                error,
+            }
+        })
     }
 }
 
@@ -1020,6 +1015,9 @@ mod tests {
         let cstr = &*cstring;
         let ascii_err = cstr.into_ascii_string().unwrap_err();
         assert_eq!(ascii_err.into_source(), &*cstring);
+
+        let ascii_err = cstring.clone().into_ascii_string().unwrap_err();
+        assert_eq!(ascii_err.into_source(), cstring);
     }
 
     #[test]
